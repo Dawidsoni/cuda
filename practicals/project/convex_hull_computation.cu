@@ -50,6 +50,20 @@ Point get_farthest_point_from_line(const Point& line_start, const Point& line_en
     return farthest_point;
 }
 
+
+Point get_point_with_max_y_coordinate(const std::vector<Point>& points) {
+    Point best_point = points[0];
+    for (int i = 1; i < points.size(); i++) {
+        if (points[i].second > best_point.second) {
+           best_point = points[i];
+        }
+        if (points[i].second == best_point.second && points[i].first < best_point.first) {
+            best_point = points[i];
+        }
+    }
+    return best_point;
+}
+
 ConvexHullTime compute_quickhull_gpu_with_time(std::vector<Point>& points, bool include_data_transfer_time) {
     Point* device_points;
     cudaMalloc((void **)&device_points, sizeof(Point) * points.size());
@@ -76,6 +90,8 @@ void compute_recursive_quickhull_cpu(
     }
     Point farthest_point = get_farthest_point_from_line(line_start, line_end, points);
     std::vector<Point> side1_points, side2_points;
+    side1_points.reserve(points.size());
+    side2_points.reserve(points.size());
     for (int i = 0; i < points.size(); i++) {
         if (points[i] == farthest_point) {
             continue;
@@ -115,7 +131,26 @@ ConvexHull compute_quickhull_cpu(std::vector<Point>& points) {
 
 
 ConvexHull compute_graham_cpu(std::vector<Point>& points) {
-    return ConvexHull();
+    Point initial_point = get_point_with_max_y_coordinate(points);
+    std::sort(points.begin(), points.end(), [initial_point](const Point& point1, const Point& point2) {
+        if (point1 == initial_point) {
+            return true;
+        }
+        return point2 != initial_point && is_point_on_right_side_of_line(initial_point, point2, point1);
+    });
+    std::vector<Point> chosen_points;
+    chosen_points.push_back(points[0]);
+    for (int i = 1; i < points.size(); i++) {
+        while (chosen_points.size() > 1 && is_point_on_right_side_of_line(
+                chosen_points[chosen_points.size() - 2],
+                chosen_points[chosen_points.size() - 1],
+                points[i])) {
+            chosen_points.pop_back();
+        }
+        chosen_points.push_back(points[i]);
+    }
+    chosen_points.push_back(points[0]);
+    return ConvexHull(points, chosen_points);
 }
 
 
