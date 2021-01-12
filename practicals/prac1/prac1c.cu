@@ -1,6 +1,4 @@
-//
-// include files
-//
+// If the synchronization is not be performed, values of the x array are not be updated by the kernel.
 
 #include <stdlib.h>
 #include <stdio.h>
@@ -10,11 +8,12 @@
 #include <helper_cuda.h>
 
 
+__device__ __managed__ double *x;
 //
 // kernel routine
 // 
 
-__global__ void my_first_kernel(float *x)
+__global__ void my_first_kernel()
 {
   int tid = threadIdx.x + blockDim.x*blockIdx.x;
 
@@ -28,8 +27,7 @@ __global__ void my_first_kernel(float *x)
 
 int main(int argc, const char **argv)
 {
-  float *x;
-  int   nblocks, nthreads, nsize, n; 
+  int   nblocks, nthreads, nsize, n;
 
   // initialise card
 
@@ -41,24 +39,16 @@ int main(int argc, const char **argv)
   nthreads = 8;
   nsize    = nblocks*nthreads ;
 
-  // allocate memory for array
-
   checkCudaErrors(cudaMallocManaged(&x, nsize*sizeof(float)));
 
   // execute kernel
-  
-  my_first_kernel<<<nblocks,nthreads>>>(x);
-  getLastCudaError("my_first_kernel execution failed\n");
 
-  // synchronize to wait for kernel to finish, and data copied back
+  my_first_kernel<<<nblocks,nthreads>>>();
+  getLastCudaError("my_first_kernel execution failed\n");
 
   cudaDeviceSynchronize();
 
   for (n=0; n<nsize; n++) printf(" n,  x  =  %d  %f \n",n,x[n]);
-
-  // free memory 
-
-  checkCudaErrors(cudaFree(x));
 
   // CUDA exit -- needed to flush printf write buffer
 

@@ -7,7 +7,7 @@ NVCC_FLAGS := -lineinfo -arch=sm_61 --ptxas-options=-v --use_fast_math
 all: run_convex_hull
 
 run_convex_hull: $(CC)
-	nvcc -o run_convex_hull $(CC) $(OPENGL_FLAGS) $(INCLUES) $(LIBS) $(NVCC_FLAGS)
+	nvcc -std=c++11 -o run_convex_hull $(CC) $(OPENGL_FLAGS) $(INCLUES) $(LIBS) $(NVCC_FLAGS)
 
 clean:
 	rm -f run_convex_hull

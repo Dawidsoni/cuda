@@ -15,7 +15,9 @@
 #include <iostream>
 #include <vector>
 #include <numeric>
+#include <iomanip>
 #include <stdlib.h>
+#include <algorithm>
 #include "common.h"
 #include "convex_hull_computation.h"
 #include "convex_hull_display.h"
@@ -40,15 +42,25 @@ std::vector<Point> random_points(int points_count) {
 }
 
 
-ConvexHull run_simulations(std::string& hull_algorithm, int points_count, int simulations_count) {
+ConvexHull run_simulations(const std::string& hull_algorithm, const int points_count, const int simulations_count) {
     std::vector<float> run_times;
+    ConvexHullTime convex_hull_run_time;
     for (int i = 0; i < simulations_count; i++) {
-        run_times.push_back(1.0);
+        std::vector<Point> points = random_points(points_count);
+        convex_hull_run_time = compute_convex_hull_with_time(hull_algorithm, points, false);
+        run_times.push_back(convex_hull_run_time.second);
     }
-    float mean = std::accumulate(run_times.begin(), run_times.end(), 0.0) / run_times.size();
-    std::vector<Point> xxx {Point(-0.9, -0.9), Point(0.9, -0.9), Point(-0.9, 0.9), Point(0.9, 0.9)};
-    std::vector<Point> yyy { xxx[0], xxx[1], xxx[2], xxx[0]};
-    return ConvexHull(xxx, yyy);
+    float total_run_time = std::accumulate(run_times.begin(), run_times.end(), 0.0);
+    float mean_run_time = total_run_time / run_times.size();
+    std::vector<float> squared_run_times;
+    squared_run_times.resize(run_times.size());
+    std::transform(run_times.begin(), run_times.end(), squared_run_times.begin(), [](float x) { return x * x; });
+    float total_squared_run_time = std::accumulate(squared_run_times.begin(), squared_run_times.end(), 0.0);
+    float var_run_time = (total_squared_run_time / run_times.size() - mean_run_time * mean_run_time);
+    std::cout << std::fixed << std::setprecision(3);
+    std::cout << "Computation time mean: " << mean_run_time << " ms\n";
+    std::cout << "Computation time variance: " << var_run_time << " ms\n";
+    return convex_hull_run_time.first;
 }
 
 

@@ -22,7 +22,7 @@ void reduction_gold(float* odata, float* idata, const unsigned int len)
 // GPU routines
 ////////////////////////////////////////////////////////////////////////////////
 
-__global__ void reduction(float *g_odata, float *g_idata)
+__global__ void reduction(float *g_odata, float *g_idata, int elements_per_block, int min_power2)
 {
     // dynamically allocated shared memory
 
@@ -32,20 +32,52 @@ __global__ void reduction(float *g_odata, float *g_idata)
 
     // first, each thread loads data into shared memory
 
-    temp[tid] = g_idata[tid];
+    temp[tid] = g_idata[elements_per_block * blockIdx.x + tid];
 
     // next, we perform binary tree reduction
 
-    for (int d = blockDim.x>>1; d > 0; d >>= 1) {
+    for (int d = min_power2 >> 1; d > 0; d >>= 1) {
       __syncthreads();  // ensure previous step completed 
-      if (tid<d)  temp[tid] += temp[tid+d];
+      if (tid < d && tid + d < blockDim.x)  temp[tid] += temp[tid+d];
     }
 
     // finally, first thread puts result into global memory
 
-    if (tid==0) g_odata[0] = temp[0];
+    if (tid==0) g_odata[blockIdx.x] = temp[0];
 }
 
+
+__global__ void warp_reduction(float *g_odata, float *g_idata, int elements_per_block, int min_power2)
+{
+    // dynamically allocated shared memory
+
+    extern  __shared__  float temp[];
+
+    int tid = threadIdx.x;
+
+    // first, each thread loads data into shared memory
+
+    temp[tid] = g_idata[elements_per_block * blockIdx.x + tid];
+
+    // next, we perform binary tree reduction
+
+    int thread_offset = (tid / 32) * 32;
+
+    for (int i = 16; i > 0; i /= 2) {
+        temp[tid] += __shfl_down_sync(-1, temp[tid], thread_offset + i);
+    }
+
+    if (tid % 32 == 0) {
+        for (int d = min_power2 >> 1; d >= 32; d >>= 1) {
+            __syncthreads();
+            if (tid < d && tid + d < blockDim.x)  temp[tid] += temp[tid+d];
+        }
+    }
+
+    // finally, first thread puts result into global memory
+
+    if (tid==0) g_odata[blockIdx.x] = temp[0];
+}
 
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -54,7 +86,7 @@ __global__ void reduction(float *g_odata, float *g_idata)
 
 int main( int argc, const char** argv) 
 {
-  int num_elements, num_threads, mem_size, shared_mem_size;
+  int num_blocks, num_elements, num_threads, mem_size, shared_mem_size, min_power2;
 
   float *h_data, *reference, sum;
   float *d_idata, *d_odata;
@@ -63,9 +95,13 @@ int main( int argc, const char** argv)
 
   findCudaDevice(argc, argv);
 
-  num_elements = 512;
-  num_threads  = num_elements;
+  num_threads  = 125;
+  num_elements = num_threads * 32;
+  num_blocks = num_elements / num_threads;
   mem_size     = sizeof(float) * num_elements;
+
+  min_power2 = 1;
+  while (min_power2 < num_threads) min_power2 <<= 1;
 
   // allocate host memory to store the input data
   // and initialize to integer values between 0 and 1000
@@ -83,7 +119,7 @@ int main( int argc, const char** argv)
   // allocate device memory input and output arrays
 
   checkCudaErrors( cudaMalloc((void**)&d_idata, mem_size) );
-  checkCudaErrors( cudaMalloc((void**)&d_odata, sizeof(float)) );
+  checkCudaErrors( cudaMalloc((void**)&d_odata, num_blocks * sizeof(float)) );
 
   // copy host memory to device input array
 
@@ -92,18 +128,20 @@ int main( int argc, const char** argv)
 
   // execute the kernel
 
-  shared_mem_size = sizeof(float) * num_elements;
-  reduction<<<1,num_threads,shared_mem_size>>>(d_odata,d_idata);
+  shared_mem_size = sizeof(float) * num_elements / num_blocks;
+  warp_reduction<<<num_blocks,num_threads,shared_mem_size>>>(d_odata, d_idata, num_elements / num_blocks, min_power2);
   getLastCudaError("reduction kernel execution failed");
 
   // copy result from device to host
 
-  checkCudaErrors( cudaMemcpy(h_data, d_odata, sizeof(float),
-                              cudaMemcpyDeviceToHost) );
+  checkCudaErrors( cudaMemcpy(h_data, d_odata, sizeof(float) * num_blocks, cudaMemcpyDeviceToHost) );
 
   // check results
-
-  printf("reduction error = %f\n",h_data[0]-sum);
+  float d_sum = 0;
+  for (int i = 0; i < num_blocks; i++) {
+      d_sum += h_data[i];
+  }
+  printf("reduction error = %f\n", d_sum - sum);
 
   // cleanup memory
 
