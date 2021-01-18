@@ -6,11 +6,13 @@
  *                    following values: 'quickhull_cpu', 'quickhull_gpu', 'graham_cpu'
  *  - points counts: The number of points that will be used to calculate a convex hull
  *  - simulations count: The number of times a convex hull computation algorithm will be run
- *  - draw convex hull: Whether to show a computed convex hull on a screen (if the simulations count is greater than 1,
- *                      the last computed convex hull is shown on the screen)
+ *  - seed: Random seed used to draw points
+ *  - output file: A location of a file where points of the last computed convex hull should be saved. If it is equal
+ *                 to 0, a convex hull is not saved.
+ *  - display convex hull: Whether to display the last computed convex hull on the screen
  *
  * Example usage:
- *  ./run_convex_hull quickhull_cpu 10 100 1
+ *  ./run_convex_hull quickhull_cpu 10 100 1 123
  */
 #include <iostream>
 #include <vector>
@@ -18,6 +20,7 @@
 #include <iomanip>
 #include <stdlib.h>
 #include <algorithm>
+#include <fstream>
 #include "common.h"
 #include "convex_hull_computation.h"
 #include "convex_hull_display.h"
@@ -64,24 +67,71 @@ ConvexHull run_simulations(const std::string& hull_algorithm, const int points_c
 }
 
 
-int main(int argc, char **argv) {
-    if (argc != 5) {
-        std::cout << "Error: expected 5 arguments to be passed, got " << argc << "\n";
-        return 1;
+bool arguments_valid(int argc, char **argv) {
+    if (argc != 7) {
+        std::cout << "Error: expected 7 arguments to be passed, got " << argc << "\n";
+        return false;
     }
     std::string hull_algorithm = argv[1];
     if (hull_algorithm != "quickhull_cpu" && hull_algorithm != "quickhull_gpu" && hull_algorithm != "graham_cpu") {
         std::cout << "Error: expected hull algorithm to be equal to one of the following values: "
-            << "'quickhull_cpu', 'quickhull_gpu', 'graham_cpu'" << hull_algorithm << "'\n";
-        return 1;
+                  << "'quickhull_cpu', 'quickhull_gpu', 'graham_cpu'" << hull_algorithm << "'\n";
+        return false;
     }
     int points_count = atoi(argv[2]);
+    if (points_count < 3) {
+        std::cout << "Error: expected the number of points to be greater or equal to 3, got " << points_count << "\n";
+        return false;
+    }
+    return true;
+}
+
+void save_convex_hull(const ConvexHull& convex_hull, const std::string& output_file) {
+    std::ofstream file_stream;
+    file_stream.open(output_file);
+    file_stream << std::fixed << std::setprecision(3) << convex_hull.first.size() << "\n";
+    for (const Point& point : convex_hull.first) {
+        file_stream << "(" << point.first << ", " << point.second << ") ";
+    }
+    file_stream << "\n" << convex_hull.second.size() << "\n";
+    for (const Point& point : convex_hull.second) {
+        file_stream << "(" << point.first << ", " << point.second << ") ";
+    }
+    file_stream << "\n";
+    int hull_index = 0;
+    for (int arr_iteration = 0; arr_iteration < 2; arr_iteration++) {
+        for (int i = 0; i < convex_hull.first.size(); i++) {
+            if (hull_index == convex_hull.second.size()) {
+                break;
+            }
+            if (convex_hull.first[i] == convex_hull.second[hull_index]) {
+                file_stream << i << " ";
+                hull_index++;
+            }
+        }
+    }
+    file_stream << "\n";
+    file_stream.close();
+}
+
+int main(int argc, char **argv) {
+    if (!arguments_valid(argc, argv)) {
+        return 1;
+    }
+    std::string hull_algorithm = argv[1];
+    int points_count = atoi(argv[2]);
     int simulations_count = atoi(argv[3]);
-    bool hull_should_be_drawn = atoi(argv[4]);
+    int seed = atoi(argv[4]);
+    std::string output_file = argv[5];
+    bool hull_should_be_drawn = atoi(argv[6]);
     std::cout << "Running calculations on " << hull_algorithm << " (points count: " << points_count
         << ", simulations count: " << simulations_count << ")\n";
-    srand(time(NULL));
+    srand(seed);
     ConvexHull convex_hull = run_simulations(hull_algorithm, points_count, simulations_count);
+    if (output_file != "0") {
+        std::cout << "Saving computed convex hull to the output file: '" << output_file << "'\n";
+        save_convex_hull(convex_hull, output_file);
+    }
     if (hull_should_be_drawn) {
         std::cout << "Drawing last computed convex hull on the screen\n";
         glutInit(&argc, argv);
